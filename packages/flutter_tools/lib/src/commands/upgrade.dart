@@ -137,18 +137,13 @@ class UpgradeCommandRunner {
     }
     recordState(flutterVersion);
     await upgradeChannel(flutterVersion);
-    await attemptReset(upstreamRevision);
-    if (!testFlow) {
+    final bool alreadyUpToDate = await attemptFastForward(flutterVersion);
+    if (alreadyUpToDate) {
+      // If the upgrade was a no op, then do not continue with the second half.
+      printTrace('Flutter is already up to date on channel ${flutterVersion.channel}');
+    } else {
       await flutterUpgradeContinue();
     }
-  }
-
-  void recordState(FlutterVersion flutterVersion) {
-    final Channel channel = getChannelForName(flutterVersion.channel);
-    if (channel == null) {
-      return;
-    }
-    globals.persistentToolState.updateLastActiveVersion(flutterVersion.frameworkRevision, channel);
   }
 
   Future<void> flutterUpgradeContinue() async {
@@ -251,19 +246,31 @@ class UpgradeCommandRunner {
 
   /// Attempts a hard reset to the given revision.
   ///
-  /// This is a reset instead of fast forward because if we are on a release
-  /// branch with cherry picks, there may not be a direct fast-forward route
-  /// to the next release.
-  Future<void> attemptReset(String newRevision) async {
-    try {
-      await processUtils.run(
-        <String>['git', 'reset', '--hard', newRevision],
-        throwOnError: true,
-        workingDirectory: workingDirectory,
-      );
-    } on ProcessException catch (e) {
-      throwToolExit(e.message, exitCode: e.errorCode);
+  /// If there haven't been any hot fixes or local changes, this is equivalent
+  /// to a fast-forward.
+  ///
+  /// If the fast forward lands us on the same channel and revision, then
+  /// returns true, otherwise returns false.
+  Future<bool> attemptFastForward(FlutterVersion oldFlutterVersion) async {
+    final int code = await processUtils.stream(
+      <String>['git', 'pull', '--ff'],
+      workingDirectory: Cache.flutterRoot,
+      mapFunction: (String line) => matchesGitLine(line) ? null : line,
+    );
+    if (code != 0) {
+      throwToolExit(null, exitCode: code);
     }
+
+    // Check if the upgrade did anything.
+    bool alreadyUpToDate = false;
+    try {
+      final FlutterVersion newFlutterVersion = FlutterVersion();
+      alreadyUpToDate = newFlutterVersion.channel == oldFlutterVersion.channel &&
+        newFlutterVersion.frameworkRevision == oldFlutterVersion.frameworkRevision;
+    } catch (e) {
+      printTrace('Failed to determine FlutterVersion after upgrade fast-forward: $e');
+    }
+    return alreadyUpToDate;
   }
 
   /// Update the engine repository and precache all artifacts.

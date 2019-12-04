@@ -150,6 +150,21 @@ const Feature flutterAndroidEmbeddingV2Feature = Feature(
   ),
 );
 
+/// The [Feature] for using the incremental compiler instead of build runner.
+const Feature flutterWebIncrementalCompiler = Feature(
+  name: 'Enable the incremental compiler for web builds',
+  configSetting: 'enable-web-incremental-compiler',
+  environmentOverride: 'WEB_INCREMENTAL_COMPILER',
+  master: FeatureChannelSetting(
+    available: true,
+    enabledByDefault: true,
+  ),
+  stable: FeatureChannelSetting(
+    available: true,
+    enabledByDefault: true,
+  ),
+);
+
 /// A [Feature] is a process for conditionally enabling tool features.
 ///
 /// All settings are optional, and if not provided will generally default to

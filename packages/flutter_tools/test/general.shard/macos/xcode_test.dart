@@ -610,6 +610,12 @@ void main() {
         Platform: () => macPlatform,
       });
     });
+
+    testUsingContext('SDK name', () {
+      expect(getNameForSdk(SdkType.iPhone), 'iphoneos');
+      expect(getNameForSdk(SdkType.iPhoneSimulator), 'iphonesimulator');
+      expect(getNameForSdk(SdkType.macOS), 'macosx');
+    });
   });
 }
 

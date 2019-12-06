@@ -199,7 +199,7 @@ class BuildIOSFrameworkCommand extends BuildSubCommand {
       }
 
       // Build aot, create module.framework and copy.
-      await _produceAppFramework(buildInfo, iPhoneBuildOutput, simulatorBuildOutput, modeDirectory);
+      await _produceAppFramework(mode, iPhoneBuildOutput, simulatorBuildOutput, modeDirectory);
 
       // Build and copy plugins.
       await processPodsIfNeeded(_project.ios, getIosBuildDirectory(), buildInfo.mode);
@@ -343,18 +343,15 @@ end
     await _produceXCFramework(buildInfo, fatFlutterFrameworkCopy);
   }
 
-  Future<void> _produceAppFramework(BuildInfo buildInfo, Directory iPhoneBuildOutput, Directory simulatorBuildOutput, Directory modeDirectory) async {
+  Future<void> _produceAppFramework(BuildMode mode, Directory iPhoneBuildOutput, Directory simulatorBuildOutput, Directory modeDirectory) async {
     const String appFrameworkName = 'App.framework';
     final Directory destinationAppFrameworkDirectory = modeDirectory.childDirectory(appFrameworkName);
+    destinationAppFrameworkDirectory.createSync(recursive: true);
 
-    if (buildInfo.mode == BuildMode.debug) {
-      final Status status = globals.logger.startProgress(' ├─Adding placeholder App.framework for debug...', timeout: timeoutConfiguration.fastOperation);
-      try {
-        destinationAppFrameworkDirectory.createSync(recursive: true);
-        await _produceStubAppFrameworkIfNeeded(buildInfo, iPhoneBuildOutput, simulatorBuildOutput, destinationAppFrameworkDirectory);
-      } finally {
-        status.stop();
-      }
+    if (mode == BuildMode.debug) {
+      final Status status = logger.startProgress(' ├─Add placeholder App.framework for debug...', timeout: timeoutConfiguration.fastOperation);
+      await _produceStubAppFrameworkIfNeeded(mode, iPhoneBuildOutput, simulatorBuildOutput, destinationAppFrameworkDirectory);
+      status.stop();
     } else {
       await _produceAotAppFrameworkIfNeeded(buildInfo, modeDirectory);
     }
@@ -382,8 +379,8 @@ end
     await _produceXCFramework(buildInfo, destinationAppFrameworkDirectory);
   }
 
-  Future<void> _produceStubAppFrameworkIfNeeded(BuildInfo buildInfo, Directory iPhoneBuildOutput, Directory simulatorBuildOutput, Directory destinationAppFrameworkDirectory) async {
-    if (buildInfo.mode != BuildMode.debug) {
+  Future<void> _produceStubAppFrameworkIfNeeded(BuildMode mode, Directory iPhoneBuildOutput, Directory simulatorBuildOutput, Directory destinationAppFrameworkDirectory) async {
+    if (mode != BuildMode.debug) {
       return;
     }
     const String appFrameworkName = 'App.framework';
@@ -407,9 +404,28 @@ end
       destinationAppFrameworkDirectory.childFile(binaryName).path
     ];
 
-    final RunResult lipoResult = await processUtils.run(
+    await processUtils.run(
       lipoCommand,
       allowReentrantFlutter: false,
+    );
+  }
+
+  Future<void> _produceAotAppFrameworkIfNeeded(BuildMode mode, Directory iPhoneBuildOutput, Directory destinationAppFrameworkDirectory) async {
+    if (mode == BuildMode.debug) {
+      return;
+    }
+    final Status status = logger.startProgress(' ├─Building Dart AOT for App.framework...', timeout: timeoutConfiguration.slowOperation);
+    await aotBuilder.build(
+      platform: TargetPlatform.ios,
+      outputPath: iPhoneBuildOutput.path,
+      buildMode: mode,
+      // Relative paths show noise in the compiler https://github.com/dart-lang/sdk/issues/37978.
+      mainDartFile: fs.path.absolute(targetFile),
+      quiet: true,
+      bitcode: true,
+      reportTimings: false,
+      iosBuildArchs: <DarwinArch>[DarwinArch.armv7, DarwinArch.arm64],
+      dartDefines: dartDefines,
     );
 
     if (lipoResult.exitCode != 0) {

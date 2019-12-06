@@ -95,13 +95,13 @@ Future<void> main() async {
         'App',
       ));
 
-      final String debugAppFrameworkPath = path.join(
+      final String appFrameworkPath = path.join(
         outputPath,
         'Debug',
         'App.framework',
         'App',
       );
-      final String aotSymbols = await dylibSymbols(debugAppFrameworkPath);
+      final String aotSymbols = await dylibSymbols(appFrameworkPath);
 
       if (aotSymbols.contains('architecture') ||
           aotSymbols.contains('_kDartVmSnapshot')) {
@@ -109,14 +109,21 @@ Future<void> main() async {
       }
       await _checkFrameworkArchs(debugAppFrameworkPath, 'Debug');
 
-      checkFileExists(path.join(
-        outputPath,
-        'Debug',
-        'App.xcframework',
-        'ios-armv7_arm64',
-        'App.framework',
-        'App',
-      ));
+      final String debugAppArchs = await fileType(appFrameworkPath);
+
+      if (!debugAppArchs.contains('armv7')) {
+        throw TaskResult.failure('Debug App.framework armv7 architecture missing');
+      }
+
+      if (!debugAppArchs.contains('arm64')) {
+        throw TaskResult.failure('Debug App.framework arm64 architecture missing');
+      }
+
+      if (!debugAppArchs.contains('x86_64')) {
+        throw TaskResult.failure('Debug App.framework x86_64 architecture missing');
+      }
+
+      section('Check profile, release builds has Dart AOT dylib');
 
       checkFileExists(path.join(
         outputPath,
@@ -141,6 +148,10 @@ Future<void> main() async {
         await _checkBitcode(appFrameworkPath, mode);
 
         final String aotSymbols = await dylibSymbols(appFrameworkPath);
+
+        if (aotSymbols.contains('x86_64')) {
+          throw TaskResult.failure('$mode App.framework contains x86_64 architecture');
+        }
 
         if (!aotSymbols.contains('_kDartVmSnapshot')) {
           throw TaskResult.failure('$mode App.framework missing Dart AOT');

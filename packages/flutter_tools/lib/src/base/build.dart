@@ -245,15 +245,15 @@ class AOTSnapshotter {
     ];
 
     const String embedBitcodeArg = '-fembed-bitcode';
-    final String assemblyO = _fileSystem.path.join(outputPath, 'snapshot_assembly.o');
+    final String assemblyO = fs.path.join(outputPath, 'snapshot_assembly.o');
     List<String> isysrootArgs;
     if (isIOS) {
-      final String iPhoneSDKLocation = await _xcode.sdkLocation(SdkType.iPhone);
+      final String iPhoneSDKLocation = await xcode.sdkLocation(SdkType.iPhone);
       if (iPhoneSDKLocation != null) {
         isysrootArgs = <String>['-isysroot', iPhoneSDKLocation];
       }
     }
-    final RunResult compileResult = await _xcode.cc(<String>[
+    final RunResult compileResult = await xcode.cc(<String>[
       '-arch', targetArch,
       if (isysrootArgs != null) ...isysrootArgs,
       if (bitcode) embedBitcodeArg,

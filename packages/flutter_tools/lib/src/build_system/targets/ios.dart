@@ -393,11 +393,11 @@ class ReleaseIosApplicationBundle extends IosAssetBundle {
 /// This framework needs to exist for the Xcode project to link/bundle,
 /// but it isn't actually executed. To generate something valid, we compile a trivial
 /// constant.
-Future<RunResult> createStubAppFramework(File outputFile, SdkType sdk, { bool include32Bit = true }) async {
+Future<RunResult> createStubAppFramework(File outputFile, SdkType sdk) async {
   try {
     outputFile.createSync(recursive: true);
-  } on Exception catch (e) {
-    throwToolExit('Failed to create App.framework stub at ${outputFile.path}: $e');
+  } catch (e) {
+    throwToolExit('Failed to create App.framework stub at ${outputFile.path}');
   }
 
   final Directory tempDir = globals.fs.systemTempDirectory.createTempSync('flutter_tools_stub_source.');
@@ -410,8 +410,8 @@ Future<RunResult> createStubAppFramework(File outputFile, SdkType sdk, { bool in
     List<String> archFlags;
     if (sdk == SdkType.iPhone) {
       archFlags = <String>[
-        if (include32Bit)
-          ...<String>['-arch', getNameForDarwinArch(DarwinArch.armv7)],
+        '-arch',
+        getNameForDarwinArch(DarwinArch.armv7),
         '-arch',
         getNameForDarwinArch(DarwinArch.arm64),
       ];
@@ -422,7 +422,7 @@ Future<RunResult> createStubAppFramework(File outputFile, SdkType sdk, { bool in
       ];
     }
 
-    return await globals.xcode.clang(<String>[
+    return await xcode.clang(<String>[
       '-x',
       'c',
       ...archFlags,
@@ -432,7 +432,7 @@ Future<RunResult> createStubAppFramework(File outputFile, SdkType sdk, { bool in
       '-Xlinker', '-rpath', '-Xlinker', '@executable_path/Frameworks',
       '-Xlinker', '-rpath', '-Xlinker', '@loader_path/Frameworks',
       '-install_name', '@rpath/App.framework/App',
-      '-isysroot', await globals.xcode.sdkLocation(sdk),
+      '-isysroot', await xcode.sdkLocation(sdk),
       '-o', outputFile.path,
     ]);
   } finally {
@@ -440,8 +440,8 @@ Future<RunResult> createStubAppFramework(File outputFile, SdkType sdk, { bool in
       tempDir.deleteSync(recursive: true);
     } on FileSystemException catch (_) {
       // Best effort. Sometimes we can't delete things from system temp.
-    } on Exception catch (e) {
-      throwToolExit('Failed to create App.framework stub at ${outputFile.path}: $e');
+    } catch (e) {
+      throwToolExit('Failed to create App.framework stub at ${outputFile.path}');
     }
   }
 }

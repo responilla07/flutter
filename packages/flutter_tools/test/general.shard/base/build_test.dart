@@ -147,20 +147,10 @@ void main() {
         stderr: 'ABC\n${GenSnapshot.kIgnoredWarnings.join('\n')}\nXYZ\n'
       ));
 
-      final int result = await genSnapshot.run(
-        snapshotType: SnapshotType(TargetPlatform.android_x64, BuildMode.release),
-        darwinArch: null,
-        additionalArgs: <String>['--strip'],
-      );
-
-      expect(result, 0);
-      expect(logger.errorText, contains('ABC'));
-      for (final String ignoredWarning in GenSnapshot.kIgnoredWarnings)  {
-        expect(logger.errorText, isNot(contains(ignoredWarning)));
-      }
-      expect(logger.errorText, contains('XYZ'));
-    });
-  });
+  group('Snapshotter - AOT', () {
+    const String kSnapshotDart = 'snapshot.dart';
+    const String kSDKPath = '/path/to/sdk';
+    String skyEnginePath;
 
   group('AOTSnapshotter', () {
     MemoryFileSystem fileSystem;
@@ -174,31 +164,14 @@ void main() {
       logger = BufferLogger.test();
       fileSystem = MemoryFileSystem.test();
       mockArtifacts = MockArtifacts();
-      processManager = FakeProcessManager.list(<FakeCommand>[]);
-      snapshotter = AOTSnapshotter(
-        fileSystem: fileSystem,
-        logger: logger,
-        xcode: Xcode(
-          fileSystem: fileSystem,
-          logger: logger,
-          platform: FakePlatform(operatingSystem: 'macos'),
-          processManager: processManager,
-          xcodeProjectInterpreter: XcodeProjectInterpreter(
-            platform: platform,
-            processManager: processManager,
-            logger: logger,
-            fileSystem: fileSystem,
-            terminal: Terminal.test(),
-          ),
-        ),
-        artifacts: mockArtifacts,
-        processManager: processManager,
-      );
-      when(mockArtifacts.getArtifactPath(
-        Artifact.genSnapshot,
-        platform: anyNamed('platform'),
-        mode: anyNamed('mode')),
-      ).thenReturn('gen_snapshot');
+      mockXcode = MockXcode();
+      when(mockXcode.sdkLocation(any)).thenAnswer((_) => Future<String>.value(kSDKPath));
+
+      bufferLogger = BufferLogger();
+      for (BuildMode mode in BuildMode.values) {
+        when(mockArtifacts.getArtifactPath(Artifact.snapshotDart,
+            platform: anyNamed('platform'), mode: mode)).thenReturn(kSnapshotDart);
+      }
     });
 
     testWithoutContext('does not build iOS with debug build mode', () async {
@@ -303,53 +276,51 @@ void main() {
       );
 
       expect(genSnapshotExitCode, 0);
-      expect(processManager.hasRemainingExpectations, false);
-    });
+      expect(genSnapshot.callCount, 1);
+      expect(genSnapshot.snapshotType.platform, TargetPlatform.ios);
+      expect(genSnapshot.snapshotType.mode, BuildMode.profile);
+      expect(genSnapshot.additionalArgs, <String>[
+        '--deterministic',
+        '--snapshot_kind=app-aot-assembly',
+        '--assembly=$assembly',
+        '--no-sim-use-hardfp',
+        '--no-use-integer-division',
+        'main.dill',
+      ]);
 
-    testWithoutContext('builds iOS armv7 snapshot with dwarStackTraces', () async {
-      final String outputPath = fileSystem.path.join('build', 'foo');
-      final String assembly = fileSystem.path.join(outputPath, 'snapshot_assembly.S');
-      final String debugPath = fileSystem.path.join('foo', 'app.ios-armv7.symbols');
-        processManager.addCommand(FakeCommand(
-        command: <String>[
-          'gen_snapshot_armv7',
-          '--deterministic',
-          '--snapshot_kind=app-aot-assembly',
-          '--assembly=$assembly',
-          '--strip',
-          '--no-sim-use-hardfp',
-          '--no-use-integer-division',
-          '--no-causal-async-stacks',
-          '--lazy-async-stacks',
-          '--dwarf-stack-traces',
-          '--save-debugging-info=$debugPath',
-          'main.dill',
-        ]
-      ));
-      processManager.addCommand(kSdkPathCommand);
-      processManager.addCommand(const FakeCommand(
-        command: <String>[
-          'xcrun',
-          'cc',
-          '-arch',
-          'armv7',
-          '-isysroot',
-          '',
-          '-c',
-          'build/foo/snapshot_assembly.S',
-          '-o',
-          'build/foo/snapshot_assembly.o',
-        ]
-      ));
-      processManager.addCommand(const FakeCommand(
-        command: <String>[
-          'xcrun',
-          'clang',
-          '-arch',
-          'armv7',
-          ...kDefaultClang,
-        ]
-      ));
+      final VerificationResult toVerifyCC = verify(xcode.cc(captureAny));
+      expect(toVerifyCC.callCount, 1);
+      final dynamic ccArgs = toVerifyCC.captured.first;
+      expect(ccArgs, contains('-fembed-bitcode'));
+      expect(ccArgs, contains('-isysroot'));
+      expect(ccArgs, contains(kSDKPath));
+
+      final VerificationResult toVerifyClang = verify(xcode.clang(captureAny));
+      expect(toVerifyClang.callCount, 1);
+      final dynamic clangArgs = toVerifyClang.captured.first;
+      expect(clangArgs, contains('-fembed-bitcode'));
+      expect(clangArgs, contains('-isysroot'));
+      expect(clangArgs, contains(kSDKPath));
+
+      final File assemblyFile = fs.file(assembly);
+      expect(assemblyFile.existsSync(), true);
+      expect(assemblyFile.readAsStringSync().contains('.section __DWARF'), true);
+    }, overrides: contextOverrides);
+
+    testUsingContext('iOS release AOT with bitcode uses right flags', () async {
+      fs.file('main.dill').writeAsStringSync('binary magic');
+
+      final String outputPath = fs.path.join('build', 'foo');
+      fs.directory(outputPath).createSync(recursive: true);
+
+      final String assembly = fs.path.join(outputPath, 'snapshot_assembly.S');
+      genSnapshot.outputs = <String, String>{
+        assembly: 'blah blah\n.section __DWARF\nblah blah\n',
+      };
+
+      final RunResult successResult = RunResult(ProcessResult(1, 0, '', ''), <String>['command name', 'arguments...']);
+      when(xcode.cc(any)).thenAnswer((_) => Future<RunResult>.value(successResult));
+      when(xcode.clang(any)).thenAnswer((_) => Future<RunResult>.value(successResult));
 
       final int genSnapshotExitCode = await snapshotter.build(
         platform: TargetPlatform.ios,
@@ -364,51 +335,54 @@ void main() {
       );
 
       expect(genSnapshotExitCode, 0);
-      expect(processManager.hasRemainingExpectations, false);
-    });
+      expect(genSnapshot.callCount, 1);
+      expect(genSnapshot.snapshotType.platform, TargetPlatform.ios);
+      expect(genSnapshot.snapshotType.mode, BuildMode.release);
+      expect(genSnapshot.additionalArgs, <String>[
+        '--deterministic',
+        '--snapshot_kind=app-aot-assembly',
+        '--assembly=$assembly',
+        '--no-sim-use-hardfp',
+        '--no-use-integer-division',
+        'main.dill',
+      ]);
 
-    testWithoutContext('builds iOS armv7 snapshot with obfuscate', () async {
-      final String outputPath = fileSystem.path.join('build', 'foo');
-      final String assembly = fileSystem.path.join(outputPath, 'snapshot_assembly.S');
-      processManager.addCommand(FakeCommand(
-        command: <String>[
-          'gen_snapshot_armv7',
-          '--deterministic',
-          '--snapshot_kind=app-aot-assembly',
-          '--assembly=$assembly',
-          '--strip',
-          '--no-sim-use-hardfp',
-          '--no-use-integer-division',
-          '--no-causal-async-stacks',
-          '--lazy-async-stacks',
-          '--obfuscate',
-          'main.dill',
-        ]
-      ));
-      processManager.addCommand(kSdkPathCommand);
-      processManager.addCommand(const FakeCommand(
-        command: <String>[
-          'xcrun',
-          'cc',
-          '-arch',
-          'armv7',
-          '-isysroot',
-          '',
-          '-c',
-          'build/foo/snapshot_assembly.S',
-          '-o',
-          'build/foo/snapshot_assembly.o',
-        ]
-      ));
-      processManager.addCommand(const FakeCommand(
-        command: <String>[
-          'xcrun',
-          'clang',
-          '-arch',
-          'armv7',
-          ...kDefaultClang,
-        ]
-      ));
+      final VerificationResult toVerifyCC = verify(xcode.cc(captureAny));
+      expect(toVerifyCC.callCount, 1);
+      final dynamic ccArgs = toVerifyCC.captured.first;
+      expect(ccArgs, contains('-fembed-bitcode'));
+      expect(ccArgs, contains('-isysroot'));
+      expect(ccArgs, contains(kSDKPath));
+
+      final VerificationResult toVerifyClang = verify(xcode.clang(captureAny));
+      expect(toVerifyClang.callCount, 1);
+      final dynamic clangArgs = toVerifyClang.captured.first;
+      expect(clangArgs, contains('-fembed-bitcode'));
+      expect(clangArgs, contains('-isysroot'));
+      expect(clangArgs, contains(kSDKPath));
+
+      final File assemblyFile = fs.file(assembly);
+      final File assemblyBitcodeFile = fs.file('$assembly.stripped.S');
+      expect(assemblyFile.existsSync(), true);
+      expect(assemblyBitcodeFile.existsSync(), true);
+      expect(assemblyFile.readAsStringSync().contains('.section __DWARF'), true);
+      expect(assemblyBitcodeFile.readAsStringSync().contains('.section __DWARF'), false);
+    }, overrides: contextOverrides);
+
+    testUsingContext('builds iOS armv7 profile AOT snapshot', () async {
+      fs.file('main.dill').writeAsStringSync('binary magic');
+
+      final String outputPath = fs.path.join('build', 'foo');
+      fs.directory(outputPath).createSync(recursive: true);
+
+      final String assembly = fs.path.join(outputPath, 'snapshot_assembly.S');
+      genSnapshot.outputs = <String, String>{
+        assembly: 'blah blah\n.section __DWARF\nblah blah\n',
+      };
+
+      final RunResult successResult = RunResult(ProcessResult(1, 0, '', ''), <String>['command name', 'arguments...']);
+      when(xcode.cc(any)).thenAnswer((_) => Future<RunResult>.value(successResult));
+      when(xcode.clang(any)).thenAnswer((_) => Future<RunResult>.value(successResult));
 
       final int genSnapshotExitCode = await snapshotter.build(
         platform: TargetPlatform.ios,
@@ -423,50 +397,41 @@ void main() {
       );
 
       expect(genSnapshotExitCode, 0);
-      expect(processManager.hasRemainingExpectations, false);
-    });
+      expect(genSnapshot.callCount, 1);
+      expect(genSnapshot.snapshotType.platform, TargetPlatform.ios);
+      expect(genSnapshot.snapshotType.mode, BuildMode.profile);
+      expect(genSnapshot.additionalArgs, <String>[
+        '--deterministic',
+        '--snapshot_kind=app-aot-assembly',
+        '--assembly=$assembly',
+        '--no-sim-use-hardfp',
+        '--no-use-integer-division',
+        'main.dill',
+      ]);
+      verifyNever(xcode.cc(argThat(contains('-fembed-bitcode'))));
+      verifyNever(xcode.clang(argThat(contains('-fembed-bitcode'))));
 
+      verify(xcode.cc(argThat(contains('-isysroot')))).called(1);
+      verify(xcode.clang(argThat(contains('-isysroot')))).called(1);
 
-    testWithoutContext('builds iOS armv7 snapshot', () async {
-      final String outputPath = fileSystem.path.join('build', 'foo');
-      processManager.addCommand(FakeCommand(
-        command: <String>[
-          'gen_snapshot_armv7',
-          '--deterministic',
-          '--snapshot_kind=app-aot-assembly',
-          '--assembly=${fileSystem.path.join(outputPath, 'snapshot_assembly.S')}',
-          '--strip',
-          '--no-sim-use-hardfp',
-          '--no-use-integer-division',
-          '--no-causal-async-stacks',
-          '--lazy-async-stacks',
-          'main.dill',
-        ]
-      ));
-      processManager.addCommand(kSdkPathCommand);
-      processManager.addCommand(const FakeCommand(
-        command: <String>[
-          'xcrun',
-          'cc',
-          '-arch',
-          'armv7',
-          '-isysroot',
-          '',
-          '-c',
-          'build/foo/snapshot_assembly.S',
-          '-o',
-          'build/foo/snapshot_assembly.o',
-        ]
-      ));
-      processManager.addCommand(const FakeCommand(
-        command: <String>[
-          'xcrun',
-          'clang',
-          '-arch',
-          'armv7',
-          ...kDefaultClang,
-        ]
-      ));
+      final File assemblyFile = fs.file(assembly);
+      expect(assemblyFile.existsSync(), true);
+      expect(assemblyFile.readAsStringSync().contains('.section __DWARF'), true);
+    }, overrides: contextOverrides);
+
+    testUsingContext('builds iOS arm64 profile AOT snapshot', () async {
+      fs.file('main.dill').writeAsStringSync('binary magic');
+
+      final String outputPath = fs.path.join('build', 'foo');
+      fs.directory(outputPath).createSync(recursive: true);
+
+      genSnapshot.outputs = <String, String>{
+        fs.path.join(outputPath, 'snapshot_assembly.S'): '',
+      };
+
+      final RunResult successResult = RunResult(ProcessResult(1, 0, '', ''), <String>['command name', 'arguments...']);
+      when(xcode.cc(any)).thenAnswer((_) => Future<RunResult>.value(successResult));
+      when(xcode.clang(any)).thenAnswer((_) => Future<RunResult>.value(successResult));
 
       final int genSnapshotExitCode = await snapshotter.build(
         platform: TargetPlatform.ios,

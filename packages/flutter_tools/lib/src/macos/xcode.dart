@@ -52,7 +52,31 @@ String getNameForSdk(SdkType sdk) {
   return null;
 }
 
-/// A utility class for interacting with Xcode command line tools.
+enum SdkType {
+  iPhone,
+  iPhoneSimulator,
+  macOS,
+}
+
+/// SDK name passed to `xcrun --sdk`. Corresponds to undocumented Xcode
+/// SUPPORTED_PLATFORMS values.
+///
+/// Usage: xcrun [options] <tool name> ... arguments ...
+/// ...
+/// --sdk <sdk name>            find the tool for the given SDK name
+String getNameForSdk(SdkType sdk) {
+  switch (sdk) {
+    case SdkType.iPhone:
+      return 'iphoneos';
+    case SdkType.iPhoneSimulator:
+      return 'iphonesimulator';
+    case SdkType.macOS:
+      return 'macosx';
+  }
+  assert(false);
+  return null;
+}
+
 class Xcode {
   Xcode({
     @required Platform platform,
@@ -171,8 +195,9 @@ class Xcode {
 
   Future<String> sdkLocation(SdkType sdk) async {
     assert(sdk != null);
-    final RunResult runResult = await _processUtils.run(
+    final RunResult runResult = await processUtils.run(
       <String>['xcrun', '--sdk', getNameForSdk(sdk), '--show-sdk-path'],
+      throwOnError: true,
     );
     if (runResult.exitCode != 0) {
       throwToolExit('Could not find SDK location: ${runResult.stderr}');

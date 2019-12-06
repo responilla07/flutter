@@ -1,36 +1,6 @@
 # CIRRUS CONFIGURATION FILE
 # https://cirrus-ci.org/guide/writing-tasks/
 
-web_shard_template: &WEB_SHARD_TEMPLATE
-  only_if: "changesInclude('.cirrus.yml', 'dev/**', 'packages/flutter/**', 'packages/flutter_test/**', 'packages/flutter_tools/lib/src/test/**', 'packages/flutter_web_plugins/**', 'bin/internal/**') || $CIRRUS_PR == ''"
-  environment:
-    # As of March 2020, the Web shards needed 16G of RAM and 4 CPUs to run all framework tests with goldens without flaking.
-    CPU: 4
-    MEMORY: 16G
-    CHROME_NO_SANDBOX: true
-    GOLD_SERVICE_ACCOUNT: ENCRYPTED[3afeea5ac7201151c3d0dc9648862f0462b5e4f55dc600ca8b692319622f7c3eda3d577b1b16cc2ef0311b7314c1c095]
-  script:
-    - dart --enable-asserts ./dev/bots/test.dart
-
-linux_shard_template: &LINUX_SHARD_TEMPLATE
-  environment:
-    # Some of the host-only devicelab tests are pretty involved and need a lot of RAM.
-    CPU: 2
-    MEMORY: 8G
-  script:
-    - dart --enable-asserts ./dev/bots/test.dart
-
-windows_shard_template: &WINDOWS_SHARD_TEMPLATE
-  only_if: "changesInclude('.cirrus.yml', 'dev/**', 'bin/internal/**') || $CIRRUS_PR == ''" # https://github.com/flutter/flutter/issues/41941
-  script:
-    - dart --enable-asserts ./dev/bots/test.dart
-
-macos_shard_template: &MACOS_SHARD_TEMPLATE
-  only_if: "changesInclude('.cirrus.yml', 'dev/**', 'bin/internal/**') || $CIRRUS_PR == ''" # https://github.com/flutter/flutter/issues/41941
-  script:
-    - ulimit -S -n 2048 # https://github.com/flutter/flutter/issues/2976
-    - dart --enable-asserts ./dev/bots/test.dart
-
 use_compute_credits: $CIRRUS_USER_COLLABORATOR == 'true'
 
 environment:

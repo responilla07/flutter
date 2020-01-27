@@ -634,10 +634,10 @@ class TextEditingValue {
     return TextEditingValue(
       text: encoded['text'] as String,
       selection: TextSelection(
-        baseOffset: encoded['selectionBase'] as int ?? -1,
-        extentOffset: encoded['selectionExtent'] as int ?? -1,
-        affinity: _toTextAffinity(encoded['selectionAffinity'] as String) ?? TextAffinity.downstream,
-        isDirectional: encoded['selectionIsDirectional'] as bool ?? false,
+        baseOffset: encoded['selectionBase'] ?? -1,
+        extentOffset: encoded['selectionExtent'] ?? -1,
+        affinity: _toTextAffinity(encoded['selectionAffinity']) ?? TextAffinity.downstream,
+        isDirectional: encoded['selectionIsDirectional'] ?? false,
       ),
       composing: TextRange(
         start: encoded['composingBase'] as int ?? -1,

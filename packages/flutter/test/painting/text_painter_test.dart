@@ -811,26 +811,5 @@ void main() {
     expect(lines[1].lineNumber, 1);
     expect(lines[2].lineNumber, 2);
     expect(lines[3].lineNumber, 3);
-
-  // Disable this test, this is causing a large amount of flaking and
-  // does not have a clear cause. This may or may not be a dart compiler
-  // issue or similar. See https://github.com/flutter/flutter/issues/43763
-  // for more info.
-  }, skip: true);
-
-  test('TextPainter caret height and line height', () {
-    final TextPainter painter = TextPainter()
-      ..textDirection = TextDirection.ltr
-      ..strutStyle = const StrutStyle(fontSize: 50.0);
-
-    const String text = 'A';
-    painter.text = const TextSpan(text: text, style: TextStyle(height: 1.0));
-    painter.layout();
-
-    final double caretHeight = painter.getFullHeightForCaret(
-      const ui.TextPosition(offset: 0),
-      ui.Rect.zero,
-    );
-    expect(caretHeight, 50.0);
-  }, skip: kIsWeb);
+  }, skip: !isLinux);
 }

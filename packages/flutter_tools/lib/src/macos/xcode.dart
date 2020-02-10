@@ -27,11 +27,8 @@ import '../reporting/reporting.dart';
 const int kXcodeRequiredVersionMajor = 11;
 const int kXcodeRequiredVersionMinor = 0;
 
-enum SdkType {
-  iPhone,
-  iPhoneSimulator,
-  macOS,
-}
+const int kXcodeRequiredVersionMajor = 11;
+const int kXcodeRequiredVersionMinor = 0;
 
 /// SDK name passed to `xcrun --sdk`. Corresponds to undocumented Xcode
 /// SUPPORTED_PLATFORMS values.

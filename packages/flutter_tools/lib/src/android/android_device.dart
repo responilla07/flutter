@@ -959,17 +959,32 @@ class AdbLogReader extends DeviceLogReader {
   @override
   Stream<String> get logLines => _linesController.stream;
 
-  void _start() {
+  Future<void> _start() async {
+    final String lastTimestamp = device.lastLogcatTimestamp;
+    // Start the adb logcat process and filter logs by the "flutter" tag.
+    final List<String> args = <String>[
+      'logcat',
+      '-v',
+      'time',
+    ];
+    // logcat -T is not supported on Android releases before Lollipop.
+    const int kLollipopVersionCode = 21;
+    final int apiVersion = int.tryParse(await device._apiVersion);
+    if (apiVersion != null && apiVersion >= kLollipopVersionCode) {
+      args.addAll(<String>[
+        '-T',
+        lastTimestamp ?? '', // Empty `-T` means the timestamp of the logcat command invocation.
+      ]);
+    }
+
+    _process = await processUtils.start(device.adbCommandForDevice(args));
+
     // We expect logcat streams to occasionally contain invalid utf-8,
     // see: https://github.com/flutter/flutter/pull/8864.
     const Utf8Decoder decoder = Utf8Decoder(reportErrors: false);
-    _adbProcess.stdout.transform<String>(decoder)
-      .transform<String>(const LineSplitter())
-      .listen(_onLine);
-    _adbProcess.stderr.transform<String>(decoder)
-      .transform<String>(const LineSplitter())
-      .listen(_onLine);
-    unawaited(_adbProcess.exitCode.whenComplete(() {
+    _process.stdout.transform<String>(decoder).transform<String>(const LineSplitter()).listen(_onLine);
+    _process.stderr.transform<String>(decoder).transform<String>(const LineSplitter()).listen(_onLine);
+    unawaited(_process.exitCode.whenComplete(() {
       if (_linesController.hasListener) {
         _linesController.close();
       }
